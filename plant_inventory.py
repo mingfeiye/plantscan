@@ -245,14 +245,24 @@ def footprint(su, sw):
     grid = ndimage.binary_opening(grid, iterations=2)          # drop thin stray strips
     grid = ndimage.binary_dilation(grid, iterations=2)         # allow 4 cm of overhang
 
-    def inside(pu, pw):
+    edge_dist = ndimage.distance_transform_edt(grid) * FOOTPRINT_CELL   # meters to the edge
+
+    def lookup(pu, pw, table, default):
         a = ((pu - origin[0]) / FOOTPRINT_CELL).astype(int)
         b = ((pw - origin[1]) / FOOTPRINT_CELL).astype(int)
         ok = (a >= 0) & (b >= 0) & (a < grid.shape[0]) & (b < grid.shape[1])
-        res = np.zeros(len(pu), bool)
-        res[ok] = grid[a[ok], b[ok]]
+        res = np.full(len(pu), default, dtype=table.dtype)
+        res[ok] = table[a[ok], b[ok]]
         return res
 
+    def inside(pu, pw):
+        return lookup(pu, pw, grid, False)
+
+    def to_edge(pu, pw):
+        """Distance (m) from each point to the edge of the scanned surface (0 = outside)."""
+        return lookup(pu, pw, edge_dist, 0.0)
+
+    inside.to_edge = to_edge
     return inside, float(grid.sum() * FOOTPRINT_CELL ** 2)
 
 
@@ -397,9 +407,13 @@ def detect_on_surface(pts, normal, d, gap):
             if reason:
                 rejected.append(reason)
                 continue
+            # How close the object's outline comes to the edge of the scanned surface.
+            # Near 0 means the object may be partly outside the scan (cut off).
+            edge = float(inside.to_edge(ku, kw).min())
             objects.append({"u": float(ku.mean()), "w": float(kw.mean()),
                             "height_cm": round(top * 100, 1), "spread_cm": round(spread * 100, 1),
                             "max_width_cm": round(wmax * 100, 1), "points": int(mk.sum()),
+                            "edge_distance_cm": round(edge * 100, 1),
                             "split_from_touching": n_parts > 1,
                             "outline": np.column_stack([ku, kw])})
     return {"objects": objects, "rejected": rejected, "area_m2": area,
