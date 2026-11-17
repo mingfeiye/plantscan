@@ -243,6 +243,12 @@ def footprint(su, sw):
     grid = ndimage.binary_closing(grid, iterations=4)
     grid = ndimage.binary_fill_holes(grid)
     grid = ndimage.binary_opening(grid, iterations=2)          # drop thin stray strips
+    # Other furniture can be at exactly the same height as the table (a sofa seat, a sill).
+    # Keep only the largest connected part: the table itself.
+    parts, n_parts = ndimage.label(grid)
+    if n_parts > 1:
+        sizes = ndimage.sum(grid, parts, range(1, n_parts + 1))
+        grid = parts == (int(np.argmax(sizes)) + 1)
     grid = ndimage.binary_dilation(grid, iterations=2)         # allow 4 cm of overhang
 
     edge_dist = ndimage.distance_transform_edt(grid) * FOOTPRINT_CELL   # meters to the edge
@@ -456,13 +462,15 @@ def analyse(scan, grades_path="config/grades.toml", gap=0.025, min_height=0.04, 
     up_text = f"{'+' if planes[0][0][np.argmax(np.abs(planes[0][0]))] > 0 else '-'}{axis}"
     log(f"  up direction: {up_text} of the file (confidence ratio {sure:.1f})")
 
-    # Try every horizontal surface; keep the one with the most objects standing on it.
+    # Try every horizontal surface. Keep the HIGHEST real surface that has objects standing
+    # on it: a table is always above the floor, and the floor of a room has many other
+    # things on it (table legs, furniture), so "the most objects" would choose the floor.
     best = None
     for n, d, c in planes:
         res = detect_on_surface(pts, n, d, gap)
         res["objects"] = [o for o in res["objects"] if o["height_cm"] >= min_height * 100]
         level = -d                               # height of this surface along the up axis
-        key = (len(res["objects"]), level)
+        key = (len(res["objects"]) > 0, level)
         if res.get("not_a_surface"):
             log(f"  plane at {level:+.2f} m ({c:,} points): not a real surface (points under it)")
             continue
