@@ -1,0 +1,27 @@
+# Grade limits for plant_inventory.py
+#
+# !!!  DEMO VALUES ONLY  !!!
+# These numbers are placeholders for the hackathon demo. They are NOT taken from
+# ANSI Z60.1 (American Standard for Nursery Stock). Before real use, replace them with
+# the height and spread limits for each container class from the standard itself.
+#
+# How it works: a plant gets the FIRST grade (from the top) whose max_height_cm is
+# equal to or larger than the plant's height. The last grade has no limit.
+# You can rename grades, change the numbers, and add or remove grades.
+
+demo_values = true
+
+[[grades]]
+name = "Small (demo)"
+max_height_cm = 15
+
+[[grades]]
+name = "Medium (demo)"
+max_height_cm = 25
+
+[[grades]]
+name = "Large (demo)"
+max_height_cm = 35
+
+[[grades]]
+name = "Extra large (demo)"
