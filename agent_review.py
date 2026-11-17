@@ -21,6 +21,7 @@ Use (run in the project folder, after plant_inventory.py):
 Output: output/agent.json
 """
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ from pathlib import Path
 from statistics import median
 
 ACTIONS = ["count_as_one", "count_as_two", "not_a_plant", "flag_for_person"]
-TIMEOUT_S = 45
+TIMEOUT_S = 40         # keeps the whole run under 1 minute even when the agent is slow
 EDGE_CM = 3.0          # closer than this to the edge of the scanned surface: maybe cut off
 WIDE_FACTOR = 1.6      # max width more than 1.6 x the typical spread: maybe two plants
 LONG_FACTOR = 1.3      # max width more than 1.3 x its own spread: not round, maybe two plants
@@ -162,17 +163,36 @@ def plain_answer(counts, n_flagged):
     return text
 
 
-def review(result, expected=None, image_path="output/inventory.png", use_agent=True, log=print):
+def fingerprint(result, expected):
+    """A short code for 'these exact measurements and this expected count'."""
+    keys = ("id", "height_cm", "spread_cm", "max_width_cm", "edge_distance_cm",
+            "split_from_touching", "grade")
+    data = {"v": 1, "expected": expected,
+            "objects": [{k: o[k] for k in keys} for o in result["objects"]]}
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def review(result, expected=None, image_path="output/inventory.png", use_agent=True, log=print,
+           cache_dir=None):
+    """cache_dir: if given, the agent's answer is saved there. The same measurements later
+    reuse the saved answer, so that repeated runs give exactly the same result."""
     doubts, count_doubt = find_doubts(result, expected)
     log(f"Doubtful cases found by the rules: {len(doubts)}"
         + (f"; {count_doubt}" if count_doubt else ""))
     ids = {o["id"] for o in result["objects"]}
 
-    data, problem = (None, "the agent was switched off")
-    if use_agent:
+    data, problem, cached = None, "the agent was switched off", False
+    cache_file = Path(cache_dir) / f"{fingerprint(result, expected)}.json" if cache_dir else None
+    if use_agent and cache_file and cache_file.exists():
+        data, cached = json.loads(cache_file.read_text()), True
+        log("  same measurements as an earlier run: reusing the agent's saved answer")
+    elif use_agent:
         log("Asking the agent (Claude) to judge them ...")
         data, problem = ask_claude(build_prompt(result, doubts, count_doubt, expected,
                                                 str(Path(image_path).resolve())), log)
+        if data is not None and cache_file:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(data, indent=1))
 
     if data is not None:
         decisions = {d["id"]: d for d in data["decisions"]
@@ -185,7 +205,8 @@ def review(result, expected=None, image_path="output/inventory.png", use_agent=T
         else:
             answer = plain_answer(counts, n_flag)
             note = "The agent's counts did not match its own decisions; the program's count is shown."
-        return {"agent_used": True, "decisions": list(decisions.values()),
+        return {"agent_used": True, "agent_answer_reused": cached,
+                "decisions": list(decisions.values()),
                 "count_note": data["count_note"], "grade_counts": counts,
                 "answer": answer, "check_note": note, "rule_doubts": doubts}
 

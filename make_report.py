@@ -112,6 +112,8 @@ def make_report(inv, agent, image_path):
         who = "The agent step did not run."
     elif agent.get("agent_used"):
         who = "Decisions by the agent (Claude), checked by the program."
+        if agent.get("agent_answer_reused"):
+            who += " (Same measurements as an earlier run, so the agent's earlier answer is reused.)"
     else:
         who = (f"The agent was not available ({esc(agent.get('agent_problem', ''))}), so every "
                f"doubtful case is flagged for a person.")

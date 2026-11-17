@@ -38,3 +38,6 @@ output/
 
 # --- Local preview settings for the Claude desktop app ---
 .claude/launch.json
+
+# --- Saved agent answers (made again when needed) ---
+cache/
