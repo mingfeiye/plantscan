@@ -47,6 +47,7 @@ import matplotlib.pyplot as plt
 VOXEL = 0.005            # keep one point for each 5 mm cube
 PLANE_TOL = 0.01         # a point within 1 cm of a plane belongs to it
 ABOVE = 0.012            # points lower than 1.2 cm above the surface are the surface
+CORE_H = 0.025           # objects are grouped from points higher than 2.5 cm
 NEIGHBOR_R = 0.02        # outlier filter: a point needs some neighbours within 2 cm ...
 NEIGHBOR_MIN = 5         # ... at least this many (itself included)
 MAX_OBJECT_HEIGHT = 1.5  # ignore everything higher than this above the surface
@@ -293,19 +294,22 @@ def split_touching(pu, pw, h):
     Method: fill the top-view outline on a 1 cm grid and compute, for each cell, the
     distance to the edge of the outline. The centre of each round part is a peak of that
     distance; its value is the radius of the part. Two peaks are two plants when they are
-    at least 8 cm apart, each part is at least 4 cm in radius, and the neck between them is
-    narrower than 65% of the smaller radius. Thin leaves are narrow, so they never form a
-    separate part."""
+    at least 8 cm apart, each part is at least 2.5 cm in radius, and the neck between them is
+    narrower than 65% of the smaller radius. Every extra part must also STAND ON THE SURFACE
+    (have points within 6 cm of it near its centre): a clump of leaves hangs in the air, so
+    it never becomes a separate plant. Thin leaves are narrow, so they never form a part."""
     o = np.array([pu.min(), pw.min()]) - 3 * GRID
     iu = ((pu - o[0]) / GRID).astype(int)
     iw = ((pw - o[1]) / GRID).astype(int)
     occ = np.zeros((iu.max() + 4, iw.max() + 4), bool)
     occ[iu, iw] = True
+    low = np.zeros(occ.shape, bool)                                  # cells with a point near
+    low[iu[h <= TOUCH], iw[h <= TOUCH]] = True                       # the surface
     occ = ndimage.binary_fill_holes(ndimage.binary_closing(occ, iterations=2))
     dist = ndimage.distance_transform_edt(occ)                      # in cells
     dist_s = ndimage.gaussian_filter(dist, 1.0)
     sep = int(round(SPLIT_MIN_SEP / GRID))
-    min_r = 0.04 / GRID
+    min_r = 0.025 / GRID
     is_peak = (dist_s == ndimage.maximum_filter(dist_s, size=sep + 1)) & (dist_s >= min_r)
     cand = sorted(zip(*np.nonzero(is_peak)), key=lambda c: -dist_s[c])
 
@@ -314,10 +318,19 @@ def split_touching(pu, pw, h):
         line = np.outer(1 - t, a) + np.outer(t, b)
         return dist[line[:, 0].round().astype(int), line[:, 1].round().astype(int)].min()
 
+    def stands(c, r):
+        """Does the part centred at c (radius r cells) touch the surface?"""
+        a0, b0 = int(c[0]), int(c[1])
+        rr = max(int(r), 1)
+        win = low[max(a0 - rr, 0):a0 + rr + 1, max(b0 - rr, 0):b0 + rr + 1]
+        return win.mean() > 0.15
+
     peaks = []
     for c in cand:
         c = np.array(c, float)
         r_c = dist_s[tuple(c.astype(int))]
+        if peaks and not stands(c, r_c):
+            continue
         if all(np.linalg.norm(c - p) >= sep and neck(p, c) < SPLIT_VALLEY * min(r_c, r_p)
                for p, r_p in peaks):
             peaks.append((c, r_c))
@@ -386,7 +399,16 @@ def detect_on_surface(pts, normal, d, gap):
     if len(P) < 50:
         return {"objects": [], "rejected": [], "area_m2": area}
 
-    labels = DBSCAN(eps=gap, min_samples=10).fit_predict(P)
+    # Group only the points at least 2.5 cm above the surface, so that a thin "carpet" of
+    # low scan points (tray edges, cloth, noise) cannot join two objects together. Then each
+    # low point joins the group it touches (objects lower than 4 cm are ignored anyway).
+    core = Hh >= CORE_H
+    labels = np.full(len(P), -1)
+    if core.sum() >= 10:
+        labels[core] = DBSCAN(eps=gap, min_samples=10).fit_predict(P[core])
+        dist, idx = cKDTree(P[core]).query(P[~core])
+        core_labels = labels[core]
+        labels[~core] = np.where(dist < gap, core_labels[idx], -1)
     labels = attach_floating(labels, U, W, Hh)
     objects, rejected = [], []
     for lab in sorted(set(labels) - {-1}):
@@ -495,7 +517,7 @@ def analyse(scan, grades_path="config/grades.toml", gap=0.025, min_height=0.04, 
     return {"scan": str(scan), "scan_info": info, "up": up_text, "up_confidence": round(sure, 1),
             "surface_area_m2": round(res["area_m2"], 2), "objects": objs,
             "rejected": res["rejected"], "grade_counts": counts, "grades_are_demo_values": demo,
-            "_view": res["view"], "_support": res["support_uv"]}
+            "_view": res["view"], "_support": res["support_uv"], "_plane": (normal, d)}
 
 
 def write_outputs(result, out_dir):
