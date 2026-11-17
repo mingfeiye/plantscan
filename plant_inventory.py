@@ -507,7 +507,8 @@ def write_outputs(result, out_dir):
     su, sw = result["_support"]
     fig, ax = plt.subplots(figsize=(11, 8))
     ax.scatter(su, sw, s=1, c="#d9d4c7")
-    sc = ax.scatter(U, W, c=np.clip(H * 100, 0, None), s=2, cmap="viridis")
+    top = max(o["height_cm"] for o in result["objects"])      # colour scale: 0 to tallest plant
+    sc = ax.scatter(U, W, c=np.clip(H * 100, 0, top), s=2, cmap="viridis", vmin=0, vmax=top)
     for o in result["objects"]:
         ol = o["outline"]
         try:
@@ -524,7 +525,7 @@ def write_outputs(result, out_dir):
     ax.set_xlim(allu.min() - pad, allu.max() + pad)
     ax.set_ylim(allw.min() - pad, allw.max() + pad)
     ax.set_aspect("equal")
-    ax.set_title(f"Top view: {len(result['objects'])} plants", fontsize=18)
+    ax.set_title("Top view: numbers match the table", fontsize=18)
     ax.set_xlabel("meters"); ax.set_ylabel("meters")
     fig.colorbar(sc, label="height above surface (cm)")
     fig.savefig(out_dir / "inventory.png", dpi=110, bbox_inches="tight")
