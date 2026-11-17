@@ -1,0 +1,37 @@
+# --- Python virtual environment (re-create it with: python3 -m venv .venv) ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- Files that can contain an API key. Never commit these. ---
+.env
+.env.*
+*.key
+*api_key*
+*apikey*
+secrets.*
+
+# --- Scan files. Real scans can be larger than GitHub's 100 MB limit. ---
+# All scans are ignored, except the one small backup scan in demo/.
+*.ply
+*.obj
+*.mtl
+*.glb
+*.gltf
+*.usdz
+*.spz
+*.splat
+*.las
+*.e57
+*.zip
+!demo/backup_scan.*
+
+# --- Output that the program makes again on every run ---
+inventory.csv
+inventory.png
+report.html
+output/
+
+# --- Mac system files ---
+.DS_Store
