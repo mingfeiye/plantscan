@@ -423,7 +423,9 @@ def detect_on_surface(pts, normal, d, gap):
             if mk.sum() < 30:
                 continue
             ku, kw, kh = cu[mk], cw[mk], ch[mk]
-            top = float(np.percentile(kh, 99.5))
+            # Top = the 5th-highest point. Stray blobs were already removed (neighbour filter,
+            # small groups ignored), so a percentile would only cut off real leaf tips.
+            top = float(np.sort(kh)[-min(5, len(kh))])
             spread, wmax, wmin = widths(ku, kw)
             reason = None
             if kh.min() > TOUCH:
